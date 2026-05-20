@@ -7,6 +7,7 @@ UI Remix is a Manifest V3 Chrome Extension MVP for making simple, persistent UI 
 - Enable edit mode from the popup.
 - Hover page elements to highlight them.
 - Click an element and choose an action: hide, change text, style, or resize.
+- Type a simple natural language command and preview a proposed rule before applying it.
 - Save rules to `chrome.storage.local`.
 - Re-apply saved rules automatically when you revisit the same domain.
 - Re-apply rules on dynamic pages with a debounced `MutationObserver`.
@@ -54,8 +55,34 @@ Then click the reload button for UI Remix in `chrome://extensions`. Refresh the 
 - `src/shared/storage.ts` wraps `chrome.storage.local`.
 - `src/shared/selector.ts` generates selectors for clicked elements.
 - `src/shared/ruleEngine.ts` applies, reapplies, and removes UI rules.
+- `src/shared/commandParser.ts` maps natural language variants to structured `ParsedCommand` objects with confidence scores.
+- `src/content/commandResolver.ts` resolves parsed commands against the current page and creates previewable `UIRule` objects.
 
-The rule engine is intentionally data-driven. `InjectRule` is present in the type system so future AI-generated or advanced rules can be added without reshaping the storage model.
+The rule engine is intentionally data-driven. `InjectRule` is present in the type system so future AI-generated or advanced rules can be added without reshaping the storage model. The command parser is isolated so a future LLM can replace the mock parser and produce the same command intent shape, or emit selector-backed `UIRule` objects directly.
+
+## Mock Commands
+
+The current local parser supports deterministic wording variants, including:
+
+- `hide the sidebar`
+- `remove the sidebar`
+- `get rid of the sidebar`
+- `hide ads`
+- `remove advertisements`
+- `hide popups`
+- `remove distractions`
+- `focus mode`
+- `clean up this page`
+- `make this page cleaner`
+- `make buttons bigger`
+- `make the main button larger`
+- `increase the heading size`
+- `make text bigger`
+- `make the background blue`
+- `change the title to My Dashboard`
+- `rename this heading to My Dashboard`
+
+Commands are previewed first. Applying the preview saves the generated rule or rules for the current domain. If parsing succeeds but the page target is unclear, UI Remix enters a manual pick mode and asks you to click the element the command should apply to.
 
 ## Known MVP Limitations
 
@@ -63,6 +90,7 @@ The rule engine is intentionally data-driven. `InjectRule` is present in the typ
 - Text changes overwrite `textContent`, so nested rich markup inside the selected element is replaced.
 - Style editing supports only a small set of basic properties.
 - Resize is saved as a style rule with width and height.
+- Natural language commands are mock parser heuristics, not AI. They work best on common labels like sidebar, button, heading, nav, header, footer, and distraction-like elements.
 - Deleting a rule from the popup does not always undo the current page immediately; refresh reflects deletion reliably.
 - Pages with strict browser restrictions may not accept content scripts.
 - Rules are domain-scoped with `pathPattern: "*"`. Per-path matching is reserved for a later version.

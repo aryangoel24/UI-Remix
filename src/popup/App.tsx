@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 import { getDomainFromUrl } from '../shared/domain';
 import { clearRulesForDomain, deleteRule, getRulesForDomain } from '../shared/storage';
-import type { UIRule } from '../shared/types';
+import type { CommandRulePreview, UIRule } from '../shared/types';
 import { getActiveTab, sendMessageToActiveTab } from './chromeTabs';
 
 type StatusTone = 'idle' | 'success' | 'warning' | 'error';
@@ -21,6 +22,8 @@ export function App() {
   const [editMode, setEditMode] = useState(false);
   const [rulesVisible, setRulesVisible] = useState(false);
   const [rules, setRules] = useState<UIRule[]>([]);
+  const [command, setCommand] = useState('');
+  const [commandPreview, setCommandPreview] = useState<CommandRulePreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(DEFAULT_STATUS);
 
@@ -53,11 +56,28 @@ export function App() {
       const response = await sendMessageToActiveTab({ type: 'UI_REMIX_GET_EDIT_MODE_STATUS' });
       setEditMode(Boolean(response.editMode));
       setStatus(DEFAULT_STATUS);
+      await loadPendingCommandPreview();
     } catch (error) {
       setStatus({
         tone: 'warning',
         text: humanizeError(error)
       });
+    }
+  }
+
+  async function loadPendingCommandPreview(): Promise<void> {
+    try {
+      const response = await sendMessageToActiveTab({ type: 'UI_REMIX_GET_PENDING_COMMAND_PREVIEW' });
+      if (response.preview) {
+        setCommand(response.preview.command);
+        setCommandPreview(response.preview);
+        setStatus({
+          tone: response.preview.canApply ? 'success' : 'warning',
+          text: response.preview.canApply ? 'Manual target ready for review' : 'Manual target still needs review'
+        });
+      }
+    } catch {
+      // Older or restricted tabs may not have a pending command preview.
     }
   }
 
@@ -130,6 +150,106 @@ export function App() {
     }
   }
 
+  async function handlePreviewCommand(event?: FormEvent<HTMLFormElement>): Promise<void> {
+    event?.preventDefault();
+    const trimmedCommand = command.trim();
+    if (!trimmedCommand) {
+      setCommandPreview(null);
+      setStatus({
+        tone: 'error',
+        text: 'Type a command first'
+      });
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const response = await sendMessageToActiveTab({
+        type: 'UI_REMIX_PREVIEW_COMMAND',
+        command: trimmedCommand
+      });
+
+      if (!response.ok || !response.preview) {
+        setCommandPreview(null);
+        setStatus({
+          tone: 'error',
+          text: response.error ?? 'Command was unclear'
+        });
+        return;
+      }
+
+      setCommandPreview(response.preview);
+      setStatus({
+        tone: response.preview.canApply ? 'success' : 'warning',
+        text: response.preview.needsElementPick
+          ? 'Click the element you want this command to apply to'
+          : 'Review the proposed rule'
+      });
+    } catch (error) {
+      setCommandPreview(null);
+      setStatus({
+        tone: 'error',
+        text: humanizeError(error)
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleApplyCommandRule(): Promise<void> {
+    if (!commandPreview) {
+      setStatus({
+        tone: 'error',
+        text: 'Preview a command before applying it'
+      });
+      return;
+    }
+
+    if (!commandPreview.canApply || commandPreview.rules.length === 0) {
+      setStatus({
+        tone: 'warning',
+        text: commandPreview.needsElementPick
+          ? 'Click the element you want this command to apply to'
+          : 'This command is too low confidence to apply'
+      });
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const response = await sendMessageToActiveTab({
+        type: 'UI_REMIX_APPLY_COMMAND_RULES',
+        rules: commandPreview.rules.map((item) => item.rule)
+      });
+
+      if (!response.ok) {
+        setStatus({
+          tone: 'error',
+          text: response.error ?? 'Could not apply command'
+        });
+        return;
+      }
+
+      if (rulesVisible) {
+        await refreshRules();
+      }
+
+      setCommand('');
+      setCommandPreview(null);
+      setStatus({
+        tone: 'success',
+        text: commandPreview.rules.length === 1 ? 'Command rule applied' : 'Command rules applied'
+      });
+    } catch (error) {
+      setStatus({
+        tone: 'error',
+        text: humanizeError(error)
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDeleteRule(ruleId: string): Promise<void> {
     setBusy(true);
     try {
@@ -167,6 +287,7 @@ export function App() {
   }
 
   const controlsDisabled = busy || !domain;
+  const commandDisabled = busy || !domain;
 
   return (
     <main className="popup-shell">
@@ -199,6 +320,80 @@ export function App() {
         <button className="full danger" disabled={controlsDisabled} onClick={() => void handleClearRules()}>
           Clear Rules for This Site
         </button>
+      </section>
+
+      <section className="command-panel">
+        <div className="section-heading">
+          <h2>Command</h2>
+          <span>Local</span>
+        </div>
+
+        <form className="command-form" onSubmit={(event) => void handlePreviewCommand(event)}>
+          <input
+            value={command}
+            disabled={commandDisabled}
+            onChange={(event) => {
+              setCommand(event.target.value);
+              setCommandPreview(null);
+            }}
+            placeholder="Hide the sidebar"
+            aria-label="Natural language command"
+          />
+          <button disabled={commandDisabled}>Preview</button>
+        </form>
+
+        {commandPreview ? (
+          <div className={commandPreview.canApply ? 'preview-card' : 'preview-card blocked'}>
+            <div className="preview-topline">
+              <strong>{commandPreview.parsed.intent}</strong>
+              <span>{formatConfidence(commandPreview.confidence)}</span>
+            </div>
+            <p>{commandPreview.summary}</p>
+
+            <dl>
+              <div>
+                <dt>Intent</dt>
+                <dd>{commandPreview.parsed.intent}</dd>
+              </div>
+              <div>
+                <dt>Target</dt>
+                <dd>{commandPreview.parsed.targetDescription}</dd>
+              </div>
+              <div>
+                <dt>Found</dt>
+                <dd>{describeTargets(commandPreview)}</dd>
+              </div>
+            </dl>
+
+            {commandPreview.lowConfidenceReason ? (
+              <div className="manual-pick-note">{commandPreview.lowConfidenceReason}</div>
+            ) : null}
+
+            {commandPreview.rules.length > 0 ? (
+              <ul className="proposal-list">
+                {commandPreview.rules.map((item) => (
+                  <li key={item.rule.id}>
+                    <div className="proposal-head">
+                      <strong>{item.rule.type}</strong>
+                      <span>{formatConfidence(item.confidence)}</span>
+                    </div>
+                    <div className="proposal-target">{item.targetLabel}</div>
+                    <code title={item.rule.selector}>{item.rule.selector}</code>
+                    <div className="proposal-detail">{describeRule(item.rule)}</div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <button
+              className="full apply-command"
+              disabled={busy || !commandPreview.canApply}
+              onClick={() => void handleApplyCommandRule()}
+            >
+              {commandPreview.rules.length > 1 ? 'Apply Rules' : 'Apply Rule'}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <div className={`status ${status.tone}`}>{status.text}</div>
@@ -236,6 +431,43 @@ export function App() {
       ) : null}
     </main>
   );
+}
+
+function describeTargets(preview: CommandRulePreview): string {
+  if (preview.needsElementPick && preview.rules.length === 0) {
+    return 'Manual click needed';
+  }
+
+  if (preview.rules.length === 0) {
+    return 'No target found';
+  }
+
+  if (preview.rules.length === 1) {
+    const item = preview.rules[0];
+    return `${item.targetLabel} (${item.matchCount} match${item.matchCount === 1 ? '' : 'es'})`;
+  }
+
+  return `${preview.rules.length} proposed targets`;
+}
+
+function formatConfidence(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function describeRule(rule: UIRule): string {
+  switch (rule.type) {
+    case 'hide':
+      return 'Set display to none.';
+    case 'text':
+      return `Set text to "${rule.value}".`;
+    case 'style':
+      return Object.entries(rule.styles)
+        .filter(([, value]) => Boolean(value))
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ');
+    case 'inject':
+      return 'Inject rule support is reserved for a future version.';
+  }
 }
 
 function formatDate(value: string): string {
