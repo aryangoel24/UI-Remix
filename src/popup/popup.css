@@ -1,0 +1,251 @@
+:root {
+  color: #191919;
+  background: #f7f5ef;
+  font-family: "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 360px;
+  max-width: 360px;
+  background:
+    linear-gradient(135deg, rgba(25, 25, 25, 0.04) 25%, transparent 25%) 0 0 / 12px 12px,
+    #f7f5ef;
+}
+
+button {
+  appearance: none;
+  min-height: 38px;
+  border: 1px solid #191919;
+  border-radius: 7px;
+  padding: 0 12px;
+  background: #191919;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(25, 25, 25, 0.16);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+button.secondary {
+  background: #fffaf0;
+  color: #191919;
+  border-color: rgba(25, 25, 25, 0.24);
+}
+
+button.danger {
+  color: #fff;
+  background: #b63d2f;
+  border-color: #8f3025;
+}
+
+code {
+  display: block;
+  overflow: hidden;
+  color: #2f4c4a;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-shell {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0 4px;
+}
+
+.app-header h1 {
+  margin: 0;
+  color: #191919;
+  font-size: 24px;
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.app-header p {
+  max-width: 248px;
+  margin: 7px 0 0;
+  overflow: hidden;
+  color: #5f5b52;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  min-height: 24px;
+  border: 1px solid rgba(25, 25, 25, 0.18);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #5f5b52;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mode-pill.active {
+  border-color: #0f766e;
+  background: #c9f4e8;
+  color: #115e59;
+}
+
+.control-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.full {
+  width: 100%;
+}
+
+.status {
+  min-height: 30px;
+  border: 1px solid rgba(25, 25, 25, 0.12);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #5f5b52;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status.success {
+  border-color: rgba(15, 118, 110, 0.22);
+  background: #e7f8f4;
+  color: #115e59;
+}
+
+.status.warning {
+  border-color: rgba(184, 111, 0, 0.28);
+  background: #fff6df;
+  color: #76520d;
+}
+
+.status.error {
+  border-color: rgba(182, 61, 47, 0.26);
+  background: #fde9e6;
+  color: #8f3025;
+}
+
+.rules-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.rules-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rules-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.rules-header span {
+  color: #5f5b52;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.rule-list {
+  display: grid;
+  gap: 8px;
+  max-height: 330px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.rule-card {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(25, 25, 25, 0.14);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.rule-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rule-topline strong {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.rule-topline time {
+  color: #767065;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.delete-button {
+  justify-self: end;
+  min-height: 28px;
+  padding: 0 10px;
+  color: #8f3025;
+  background: #fff;
+  border-color: rgba(182, 61, 47, 0.26);
+}
+
+.empty-state {
+  border: 1px dashed rgba(25, 25, 25, 0.22);
+  border-radius: 8px;
+  padding: 18px 12px;
+  background: rgba(255, 255, 255, 0.54);
+  color: #767065;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}

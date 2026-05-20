@@ -1,0 +1,24 @@
+{
+  "name": "ui-remix-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UI Remix MVP Chrome extension for customizing website UI with saved local rules.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build && vite build --config vite.content.config.ts && vite build --config vite.background.config.ts",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "@types/chrome": "^0.0.326",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0"
+  }
+}
