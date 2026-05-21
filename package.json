@@ -8,7 +8,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build && vite build --config vite.content.config.ts && vite build --config vite.background.config.ts",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "tsx src/shared/commandParser.test.ts"
+    "test": "tsx src/shared/commandParser.test.ts && tsx src/content/aiTargetResolver.test.ts",
+    "ai:server": "tsx server/ai-server.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

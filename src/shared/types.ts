@@ -72,6 +72,7 @@ export interface CommandRulePreviewItem {
 export interface CommandRulePreview {
   command: string;
   summary: string;
+  provider: 'ai' | 'local';
   parsed: ParsedCommand;
   confidence: number;
   canApply: boolean;

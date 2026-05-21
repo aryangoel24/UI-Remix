@@ -182,7 +182,7 @@ export function App() {
       setStatus({
         tone: response.preview.canApply ? 'success' : 'warning',
         text: response.preview.needsElementPick
-          ? 'Click the element you want this command to apply to'
+          ? 'Manual pick active: click the page element'
           : 'Review the proposed rule'
       });
     } catch (error) {
@@ -209,7 +209,7 @@ export function App() {
       setStatus({
         tone: 'warning',
         text: commandPreview.needsElementPick
-          ? 'Click the element you want this command to apply to'
+          ? 'Manual pick active: click the page element'
           : 'This command is too low confidence to apply'
       });
       return;
@@ -313,6 +313,7 @@ export function App() {
 
   const controlsDisabled = busy || !domain;
   const commandDisabled = busy || !domain;
+  const commandSourceLabel = commandPreview ? commandPreview.provider.toUpperCase() : 'AI + LOCAL';
 
   return (
     <main className="popup-shell">
@@ -350,7 +351,7 @@ export function App() {
       <section className="command-panel">
         <div className="section-heading">
           <h2>Command</h2>
-          <span>Local</span>
+          <span>{commandSourceLabel}</span>
         </div>
 
         <form className="command-form" onSubmit={(event) => void handlePreviewCommand(event)}>
@@ -371,7 +372,7 @@ export function App() {
           <div className={commandPreview.canApply ? 'preview-card' : 'preview-card blocked'}>
             <div className="preview-topline">
               <strong>{commandPreview.parsed.intent}</strong>
-              <span>{formatConfidence(commandPreview.confidence)}</span>
+              <span>{commandPreview.provider.toUpperCase()} · {formatConfidence(commandPreview.confidence)}</span>
             </div>
             <p>{commandPreview.summary}</p>
 
@@ -390,7 +391,16 @@ export function App() {
               </div>
             </dl>
 
-            {commandPreview.lowConfidenceReason ? (
+            {commandPreview.needsElementPick ? (
+              <div className="manual-pick-note">
+                <strong>Manual target required</strong>
+                <span>
+                  {commandPreview.lowConfidenceReason ??
+                    'Click the element you want this command to apply to.'}
+                </span>
+                <span>After the click, use the in-page Apply/Cancel card.</span>
+              </div>
+            ) : commandPreview.lowConfidenceReason ? (
               <div className="manual-pick-note">{commandPreview.lowConfidenceReason}</div>
             ) : null}
 
@@ -410,13 +420,17 @@ export function App() {
               </ul>
             ) : null}
 
-            <button
-              className="full apply-command"
-              disabled={busy || !commandPreview.canApply}
-              onClick={() => void handleApplyCommandRule()}
-            >
-              {commandPreview.rules.length > 1 ? 'Apply Rules' : 'Apply Rule'}
-            </button>
+            {commandPreview.needsElementPick ? (
+              <div className="manual-pick-cta">Waiting for a page click</div>
+            ) : (
+              <button
+                className="full apply-command"
+                disabled={busy || !commandPreview.canApply}
+                onClick={() => void handleApplyCommandRule()}
+              >
+                {commandPreview.rules.length > 1 ? 'Apply Rules' : 'Apply Rule'}
+              </button>
+            )}
           </div>
         ) : null}
       </section>

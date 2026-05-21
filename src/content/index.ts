@@ -1,4 +1,5 @@
 import { EditorOverlay } from './editorOverlay';
+import { createAICommandRulePreview } from './aiCommandResolver';
 import { createCommandRulePreview, createCommandRulePreviewForElement } from './commandResolver';
 import { getCurrentDomain } from '../shared/domain';
 import { applyRule, applyRules, applyRulesToRoots, removeRule } from '../shared/ruleEngine';
@@ -46,6 +47,7 @@ let commandPickSession: CommandPickSession | null = null;
 interface CommandPickSession {
   command: string;
   parsed: ParsedCommand;
+  provider: CommandRulePreview['provider'];
   host: HTMLDivElement;
   hoverBox: HTMLDivElement;
 }
@@ -94,13 +96,17 @@ async function handleMessage(message: ContentMessage): Promise<ContentMessageRes
       await reloadRules();
       return { ok: true, editMode: editModeEnabled };
     case 'UI_REMIX_PREVIEW_COMMAND': {
-      const result = createCommandRulePreview(message.command, domain, selectedElement);
+      const aiPreview = await createAICommandRulePreview(message.command, domain, selectedElement);
+      const result = aiPreview
+        ? { ok: true as const, preview: aiPreview }
+        : createCommandRulePreview(message.command, domain, selectedElement);
+
       if (!result.ok) {
         return { ok: false, editMode: editModeEnabled, error: result.error };
       }
 
       if (result.preview.needsElementPick) {
-        startCommandPickMode(message.command, result.preview.parsed);
+        startCommandPickMode(message.command, result.preview.parsed, result.preview.provider);
       } else {
         stopCommandPickMode();
         pendingCommandPreview = null;
@@ -207,7 +213,11 @@ function handleKeyDown(event: KeyboardEvent): void {
   }
 }
 
-function startCommandPickMode(command: string, parsed: ParsedCommand): void {
+function startCommandPickMode(
+  command: string,
+  parsed: ParsedCommand,
+  provider: CommandRulePreview['provider']
+): void {
   stopCommandPickMode();
   disableEditMode();
   pendingCommandPreview = null;
@@ -226,6 +236,7 @@ function startCommandPickMode(command: string, parsed: ParsedCommand): void {
   commandPickSession = {
     command,
     parsed,
+    provider,
     host,
     hoverBox
   };
@@ -286,7 +297,8 @@ function handleCommandPickClick(event: MouseEvent): void {
     session.command,
     domain,
     session.parsed,
-    element
+    element,
+    session.provider
   );
   stopCommandPickMode();
   showCommandApplyConfirmation(pendingCommandPreview);

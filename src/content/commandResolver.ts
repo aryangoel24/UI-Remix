@@ -191,7 +191,8 @@ export function createCommandRulePreviewForElement(
   command: string,
   domain: string,
   parsed: ParsedCommand,
-  element: HTMLElement
+  element: HTMLElement,
+  provider: CommandRulePreview['provider'] = 'local'
 ): CommandRulePreview {
   const fallbackParsed =
     parsed.intent === 'preset'
@@ -222,7 +223,8 @@ export function createCommandRulePreviewForElement(
       : [],
     confidence,
     summary: summarizeParsed(parsed),
-    needsElementPick: false
+    needsElementPick: false,
+    provider
   });
 }
 
@@ -417,9 +419,11 @@ function buildPreview(input: {
   summary: string;
   needsElementPick?: boolean;
   lowConfidenceReason?: string;
+  provider?: CommandRulePreview['provider'];
 }): CommandRulePreview {
   return {
     command: input.command,
+    provider: input.provider ?? 'local',
     parsed: input.parsed,
     summary: input.summary,
     confidence: clampConfidence(input.confidence),
@@ -427,7 +431,7 @@ function buildPreview(input: {
       input.rules.length > 0 &&
       input.confidence >= AUTO_APPLY_CONFIDENCE &&
       input.needsElementPick !== true,
-    rules: input.rules,
+    rules: input.needsElementPick ? [] : input.rules,
     needsElementPick: input.needsElementPick,
     lowConfidenceReason: input.lowConfidenceReason
   };

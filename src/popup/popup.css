@@ -254,6 +254,8 @@ code {
 }
 
 .manual-pick-note {
+  display: grid;
+  gap: 4px;
   border: 1px dashed rgba(184, 111, 0, 0.34);
   border-radius: 7px;
   padding: 8px;
@@ -262,6 +264,27 @@ code {
   font-size: 12px;
   font-weight: 750;
   line-height: 1.35;
+}
+
+.manual-pick-note strong {
+  color: #5d3c05;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.manual-pick-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid rgba(184, 111, 0, 0.28);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #76520d;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: center;
 }
 
 .proposal-list {

@@ -3,3 +3,6 @@ dist/
 package-lock.json
 .DS_Store
 .turbo
+.env
+.env.local
+.env.production.local
