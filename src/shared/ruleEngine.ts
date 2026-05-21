@@ -7,8 +7,14 @@ interface AppliedRecord {
 }
 
 const appliedByRule = new Map<string, AppliedRecord[]>();
+const appliedRuleIdsByElement = new WeakMap<HTMLElement, Set<string>>();
 
 export function applyRule(rule: UIRule): void {
+  if (rule.enabled === false) {
+    removeRule(rule.id);
+    return;
+  }
+
   if (!rule.selector) {
     console.warn('[UI Remix] Skipping rule with empty selector', rule);
     return;
@@ -20,33 +26,41 @@ export function applyRule(rule: UIRule): void {
   }
 
   for (const element of elements) {
-    if (!(element instanceof HTMLElement)) {
-      continue;
-    }
-
-    switch (rule.type) {
-      case 'hide':
-        applyHideRule(rule.id, element);
-        break;
-      case 'text':
-        applyTextRule(rule.id, element, rule.value);
-        break;
-      case 'style':
-        applyStyleRule(rule.id, element, rule.styles);
-        break;
-      case 'inject':
-        console.info('[UI Remix] InjectRule is reserved for future support.', rule.id);
-        break;
-    }
+    applyRuleToElement(rule, element);
   }
 }
 
 export function applyRules(rules: UIRule[]): void {
-  const uniqueRules = dedupeRules(rules);
+  const uniqueRules = dedupeRules(rules).filter((rule) => rule.enabled !== false);
 
   for (const rule of uniqueRules) {
     applyRule(rule);
   }
+}
+
+export function applyRulesToRoots(rules: UIRule[], roots: HTMLElement[]): number {
+  if (roots.length === 0) {
+    return 0;
+  }
+
+  let appliedCount = 0;
+  const uniqueRules = dedupeRules(rules).filter((rule) => rule.enabled !== false);
+  const uniqueRoots = [...new Set(roots)];
+
+  for (const rule of uniqueRules) {
+    if (!rule.selector) {
+      continue;
+    }
+
+    const elements = findElementsInRoots(rule.selector, uniqueRoots);
+    for (const element of elements) {
+      if (applyRuleToElement(rule, element)) {
+        appliedCount += 1;
+      }
+    }
+  }
+
+  return appliedCount;
 }
 
 export function removeRule(ruleId: string): void {
@@ -71,9 +85,32 @@ export function removeRule(ruleId: string): void {
         record.element.style.removeProperty(property);
       }
     }
+
+    unmarkRuleApplied(ruleId, record.element);
   }
 
   appliedByRule.delete(ruleId);
+}
+
+function applyRuleToElement(rule: UIRule, element: Element): boolean {
+  if (!(element instanceof HTMLElement) || hasRuleApplied(rule.id, element)) {
+    return false;
+  }
+
+  switch (rule.type) {
+    case 'hide':
+      applyHideRule(rule.id, element);
+      return true;
+    case 'text':
+      applyTextRule(rule.id, element, rule.value);
+      return true;
+    case 'style':
+      applyStyleRule(rule.id, element, rule.styles);
+      return true;
+    case 'inject':
+      console.info('[UI Remix] InjectRule is reserved for future support.', rule.id);
+      return false;
+  }
 }
 
 function applyHideRule(ruleId: string, element: HTMLElement): void {
@@ -116,6 +153,26 @@ function findElements(selector: string): Element[] {
   }
 }
 
+function findElementsInRoots(selector: string, roots: HTMLElement[]): HTMLElement[] {
+  const elements = new Set<HTMLElement>();
+
+  try {
+    for (const root of roots) {
+      if (root.matches(selector)) {
+        elements.add(root);
+      }
+
+      for (const element of root.querySelectorAll<HTMLElement>(selector)) {
+        elements.add(element);
+      }
+    }
+  } catch (error) {
+    console.warn('[UI Remix] Invalid selector in saved rule', selector, error);
+  }
+
+  return [...elements];
+}
+
 function ensureRecord(ruleId: string, element: HTMLElement, styleProperties: string[]): AppliedRecord {
   const existing = appliedByRule.get(ruleId)?.find((record) => record.element === element);
   if (existing) {
@@ -137,12 +194,32 @@ function ensureRecord(ruleId: string, element: HTMLElement, styleProperties: str
 }
 
 function saveRecord(ruleId: string, record: AppliedRecord): void {
+  markRuleApplied(ruleId, record.element);
   const existingRecords = appliedByRule.get(ruleId) ?? [];
   if (existingRecords.some((existing) => existing.element === record.element)) {
     return;
   }
 
   appliedByRule.set(ruleId, [...existingRecords, record]);
+}
+
+function hasRuleApplied(ruleId: string, element: HTMLElement): boolean {
+  return appliedRuleIdsByElement.get(element)?.has(ruleId) ?? false;
+}
+
+function markRuleApplied(ruleId: string, element: HTMLElement): void {
+  const appliedRuleIds = appliedRuleIdsByElement.get(element) ?? new Set<string>();
+  appliedRuleIds.add(ruleId);
+  appliedRuleIdsByElement.set(element, appliedRuleIds);
+}
+
+function unmarkRuleApplied(ruleId: string, element: HTMLElement): void {
+  const appliedRuleIds = appliedRuleIdsByElement.get(element);
+  if (!appliedRuleIds) {
+    return;
+  }
+
+  appliedRuleIds.delete(ruleId);
 }
 
 function dedupeRules(rules: UIRule[]): UIRule[] {

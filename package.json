@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build && vite build --config vite.content.config.ts && vite build --config vite.background.config.ts",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "tsx src/shared/commandParser.test.ts"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -16,8 +17,10 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
     "@types/chrome": "^0.0.326",
+    "@types/node": "^20.11.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "tsx": "^4.20.0",
     "typescript": "^5.8.3",
     "vite": "^7.0.0"
   }

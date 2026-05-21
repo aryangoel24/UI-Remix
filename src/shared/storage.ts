@@ -50,7 +50,10 @@ function normalizeRules(value: unknown): UIRule[] {
     return [];
   }
 
-  return value.filter(isPlausibleRule);
+  return value.filter(isPlausibleRule).map((rule) => ({
+    ...rule,
+    enabled: rule.enabled !== false
+  }));
 }
 
 function isPlausibleRule(rule: unknown): rule is UIRule {
@@ -81,7 +84,15 @@ export async function getRulesForDomain(domain: string): Promise<UIRule[]> {
 export async function saveRule(rule: UIRule): Promise<void> {
   const rules = await getAllRules();
   const withoutDuplicate = rules.filter((existing) => existing.id !== rule.id);
-  await writeStorage(RULES_STORAGE_KEY, [...withoutDuplicate, rule]);
+  await writeStorage(RULES_STORAGE_KEY, [...withoutDuplicate, { ...rule, enabled: rule.enabled !== false }]);
+}
+
+export async function setRuleEnabled(ruleId: string, enabled: boolean): Promise<void> {
+  const rules = await getAllRules();
+  await writeStorage(
+    RULES_STORAGE_KEY,
+    rules.map((rule) => (rule.id === ruleId ? { ...rule, enabled } : rule))
+  );
 }
 
 export async function deleteRule(ruleId: string): Promise<void> {

@@ -8,9 +8,12 @@ UI Remix is a Manifest V3 Chrome Extension MVP for making simple, persistent UI 
 - Hover page elements to highlight them.
 - Click an element and choose an action: hide, change text, style, or resize.
 - Type a simple natural language command and preview a proposed rule before applying it.
+- Enable, disable, delete, or clear saved rules from the popup.
+- Deleted, disabled, and cleared rules are undone immediately on the active page when possible.
+- If a command target is unclear, click the element on the page and confirm with the in-page Apply/Cancel prompt.
 - Save rules to `chrome.storage.local`.
 - Re-apply saved rules automatically when you revisit the same domain.
-- Re-apply rules on dynamic pages with a debounced `MutationObserver`.
+- Re-apply rules on dynamic pages with a throttled `MutationObserver` that checks added DOM nodes.
 
 ## Setup
 
@@ -45,6 +48,12 @@ Then click the reload button for UI Remix in `chrome://extensions`. Refresh the 
 
 `npm run dev` is available for Vite development, but Chrome extension content scripts and service workers should be tested from the built `dist/` folder.
 
+Run parser unit tests with:
+
+```bash
+npm test
+```
+
 ## Architecture
 
 - `public/manifest.json` defines the MV3 extension shell.
@@ -54,7 +63,7 @@ Then click the reload button for UI Remix in `chrome://extensions`. Refresh the 
 - `src/shared/types.ts` defines the extensible rule model.
 - `src/shared/storage.ts` wraps `chrome.storage.local`.
 - `src/shared/selector.ts` generates selectors for clicked elements.
-- `src/shared/ruleEngine.ts` applies, reapplies, and removes UI rules.
+- `src/shared/ruleEngine.ts` applies, reapplies, and removes UI rules, including subtree-scoped dynamic reapply.
 - `src/shared/commandParser.ts` maps natural language variants to structured `ParsedCommand` objects with confidence scores.
 - `src/content/commandResolver.ts` resolves parsed commands against the current page and creates previewable `UIRule` objects.
 
@@ -82,7 +91,7 @@ The current local parser supports deterministic wording variants, including:
 - `change the title to My Dashboard`
 - `rename this heading to My Dashboard`
 
-Commands are previewed first. Applying the preview saves the generated rule or rules for the current domain. If parsing succeeds but the page target is unclear, UI Remix enters a manual pick mode and asks you to click the element the command should apply to.
+Commands are previewed first. Applying the preview saves the generated rule or rules for the current domain. If parsing succeeds but the page target is unclear, UI Remix enters a manual pick mode and asks you to click the element the command should apply to. After you pick the element, an in-page confirmation appears with Apply and Cancel actions.
 
 ## Known MVP Limitations
 
@@ -91,6 +100,7 @@ Commands are previewed first. Applying the preview saves the generated rule or r
 - Style editing supports only a small set of basic properties.
 - Resize is saved as a style rule with width and height.
 - Natural language commands are mock parser heuristics, not AI. They work best on common labels like sidebar, button, heading, nav, header, footer, and distraction-like elements.
-- Deleting a rule from the popup does not always undo the current page immediately; refresh reflects deletion reliably.
+- Immediate undo works for changes the rule engine applied in the current tab. If the site re-renders heavily, refreshing still provides the reliable source-of-truth state from storage.
+- Dynamic reapply only checks added DOM subtrees. If a site mutates an existing matched element in place without adding nodes, a refresh or later matching DOM addition may still be needed.
 - Pages with strict browser restrictions may not accept content scripts.
 - Rules are domain-scoped with `pathPattern: "*"`. Per-path matching is reserved for a later version.

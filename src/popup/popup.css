@@ -392,6 +392,15 @@ code {
   background: rgba(255, 255, 255, 0.74);
 }
 
+.rule-card.disabled {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.rule-card.disabled code,
+.rule-card.disabled .rule-topline strong {
+  opacity: 0.58;
+}
+
 .rule-topline {
   display: flex;
   align-items: center;
@@ -406,16 +415,43 @@ code {
   text-transform: uppercase;
 }
 
+.rule-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.rule-meta span {
+  color: #5f5b52;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .rule-topline time {
   color: #767065;
   font-size: 11px;
   font-weight: 650;
 }
 
+.rule-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.toggle-rule-button,
 .delete-button {
-  justify-self: end;
   min-height: 28px;
   padding: 0 10px;
+}
+
+.toggle-rule-button {
+  color: #115e59;
+  background: #fff;
+  border-color: rgba(15, 118, 110, 0.26);
+}
+
+.delete-button {
   color: #8f3025;
   background: #fff;
   border-color: rgba(182, 61, 47, 0.26);

@@ -1,7 +1,7 @@
 import { EditorOverlay } from './editorOverlay';
 import { createCommandRulePreview, createCommandRulePreviewForElement } from './commandResolver';
 import { getCurrentDomain } from '../shared/domain';
-import { applyRule, applyRules, removeRule } from '../shared/ruleEngine';
+import { applyRule, applyRules, applyRulesToRoots, removeRule } from '../shared/ruleEngine';
 import {
   createHideRule,
   createStyleRule,
@@ -24,7 +24,10 @@ declare global {
   }
 }
 
-const APPLY_RULES_DEBOUNCE_MS = 180;
+const DYNAMIC_REAPPLY_DEBOUNCE_MS = 180;
+const DYNAMIC_REAPPLY_MIN_INTERVAL_MS = 650;
+const DYNAMIC_REAPPLY_MAX_ROOTS_PER_BATCH = 60;
+const DYNAMIC_REAPPLY_MAX_QUEUED_ROOTS = 400;
 const COMMAND_PICK_HOST_ID = 'ui-remix-command-pick-root';
 
 const domain = getCurrentDomain() || window.location.origin;
@@ -32,7 +35,9 @@ let editModeEnabled = false;
 let selectedElement: HTMLElement | null = null;
 let overlay: EditorOverlay | null = null;
 let cachedRules: UIRule[] = [];
-let applyTimer: number | undefined;
+let dynamicApplyTimer: number | undefined;
+let dynamicRootQueue = new Set<HTMLElement>();
+let lastDynamicApplyAt = 0;
 let applyingRules = false;
 let observer: MutationObserver | null = null;
 let pendingCommandPreview: CommandRulePreview | null = null;
@@ -284,7 +289,7 @@ function handleCommandPickClick(event: MouseEvent): void {
     element
   );
   stopCommandPickMode();
-  showCommandPickConfirmation();
+  showCommandApplyConfirmation(pendingCommandPreview);
 }
 
 function handleCommandPickKeyDown(event: KeyboardEvent): void {
@@ -343,7 +348,7 @@ function commandPickMarkup(): string {
   `;
 }
 
-function showCommandPickConfirmation(): void {
+function showCommandApplyConfirmation(preview: CommandRulePreview): void {
   const host = document.createElement('div');
   host.dataset.uiRemixRoot = 'true';
   const shadow = host.attachShadow({ mode: 'open' });
@@ -353,10 +358,123 @@ function showCommandPickConfirmation(): void {
         all: initial;
         position: fixed;
         z-index: 2147483647;
-        top: 16px;
-        left: 50%;
-        transform: translateX(-50%);
+        right: 16px;
+        bottom: 16px;
         max-width: min(420px, calc(100vw - 24px));
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid rgba(15, 118, 110, 0.28);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.98);
+        color: #171717;
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.35;
+      }
+
+      strong {
+        color: #115e59;
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      p {
+        margin: 0;
+        color: #525252;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      code {
+        display: block;
+        overflow: hidden;
+        color: #2f4c4a;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      button {
+        appearance: none;
+        min-height: 34px;
+        border: 1px solid #115e59;
+        border-radius: 6px;
+        background: #0f766e;
+        color: #fff;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        border-color: #d4d4d4;
+        background: #f5f5f5;
+        color: #171717;
+      }
+    </style>
+    <strong>Apply this command?</strong>
+    <p>${escapeHtml(preview.summary)}</p>
+    <code title="${escapeHtml(preview.rules[0]?.rule.selector ?? '')}">${escapeHtml(
+      preview.rules[0]?.rule.selector ?? ''
+    )}</code>
+    <div class="actions">
+      <button type="button" data-action="apply">Apply</button>
+      <button type="button" class="secondary" data-action="cancel">Cancel</button>
+    </div>
+  `;
+
+  document.documentElement.appendChild(host);
+
+  shadow.querySelector('[data-action="apply"]')?.addEventListener('click', () => {
+    void applyCommandPreviewFromOverlay(preview, host);
+  });
+
+  shadow.querySelector('[data-action="cancel"]')?.addEventListener('click', () => {
+    pendingCommandPreview = null;
+    host.remove();
+  });
+}
+
+async function applyCommandPreviewFromOverlay(
+  preview: CommandRulePreview,
+  host: HTMLDivElement
+): Promise<void> {
+  try {
+    for (const item of preview.rules) {
+      await persistAndApplyRule(item.rule, { showAlert: false, rethrow: true });
+    }
+
+    pendingCommandPreview = null;
+    host.remove();
+    showTemporaryToast(preview.rules.length === 1 ? 'Command rule applied.' : 'Command rules applied.');
+  } catch (error) {
+    console.warn('[UI Remix] Could not apply picked command rule', error);
+    showTemporaryToast('UI Remix could not apply this command.');
+  }
+}
+
+function showTemporaryToast(message: string): void {
+  const host = document.createElement('div');
+  host.dataset.uiRemixRoot = 'true';
+  const shadow = host.attachShadow({ mode: 'open' });
+  shadow.innerHTML = `
+    <style>
+      :host {
+        all: initial;
+        position: fixed;
+        z-index: 2147483647;
+        right: 16px;
+        bottom: 16px;
+        max-width: min(360px, calc(100vw - 24px));
         padding: 10px 12px;
         border: 1px solid rgba(15, 118, 110, 0.28);
         border-radius: 8px;
@@ -365,17 +483,23 @@ function showCommandPickConfirmation(): void {
         box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
         font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-size: 13px;
-        font-weight: 750;
+        font-weight: 800;
         line-height: 1.35;
       }
     </style>
-    Rule preview ready. Open UI Remix again to review and apply it.
+    ${escapeHtml(message)}
   `;
 
   document.documentElement.appendChild(host);
-  window.setTimeout(() => {
-    host.remove();
-  }, 4500);
+  window.setTimeout(() => host.remove(), 3200);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 async function handleHideAction(): Promise<void> {
@@ -529,7 +653,17 @@ async function persistAndApplyRule(
 
 async function reloadRules(): Promise<void> {
   try {
-    cachedRules = await getRulesForDomain(domain);
+    const previousActiveIds = new Set(cachedRules.filter(isRuleEnabled).map((rule) => rule.id));
+    const nextRules = await getRulesForDomain(domain);
+    const nextActiveIds = new Set(nextRules.filter(isRuleEnabled).map((rule) => rule.id));
+
+    for (const ruleId of previousActiveIds) {
+      if (!nextActiveIds.has(ruleId)) {
+        removeRule(ruleId);
+      }
+    }
+
+    cachedRules = nextRules;
     applyCachedRules();
   } catch (error) {
     console.warn('[UI Remix] Could not load saved rules', error);
@@ -543,6 +677,9 @@ function applyRuleSafely(rule: UIRule): void {
   } finally {
     window.setTimeout(() => {
       applyingRules = false;
+      if (dynamicRootQueue.size > 0) {
+        scheduleRuleApplication();
+      }
     }, 0);
   }
 }
@@ -550,23 +687,54 @@ function applyRuleSafely(rule: UIRule): void {
 function applyCachedRules(): void {
   applyingRules = true;
   try {
-    applyRules(cachedRules);
+    applyRules(getEnabledRules());
   } finally {
     window.setTimeout(() => {
       applyingRules = false;
+      if (dynamicRootQueue.size > 0) {
+        scheduleRuleApplication();
+      }
     }, 0);
   }
 }
 
 function scheduleRuleApplication(): void {
-  if (applyingRules || cachedRules.length === 0) {
+  if (applyingRules || dynamicRootQueue.size === 0 || getEnabledRules().length === 0) {
     return;
   }
 
-  window.clearTimeout(applyTimer);
-  applyTimer = window.setTimeout(() => {
-    applyCachedRules();
-  }, APPLY_RULES_DEBOUNCE_MS);
+  const now = performance.now();
+  const throttleDelay = Math.max(0, DYNAMIC_REAPPLY_MIN_INTERVAL_MS - (now - lastDynamicApplyAt));
+  const delay = Math.max(DYNAMIC_REAPPLY_DEBOUNCE_MS, throttleDelay);
+
+  window.clearTimeout(dynamicApplyTimer);
+  dynamicApplyTimer = window.setTimeout(() => {
+    applyDynamicRuleBatch();
+  }, delay);
+}
+
+function applyDynamicRuleBatch(): void {
+  if (applyingRules || dynamicRootQueue.size === 0) {
+    return;
+  }
+
+  const roots = [...dynamicRootQueue].slice(0, DYNAMIC_REAPPLY_MAX_ROOTS_PER_BATCH);
+  for (const root of roots) {
+    dynamicRootQueue.delete(root);
+  }
+
+  applyingRules = true;
+  try {
+    applyRulesToRoots(getEnabledRules(), roots);
+  } finally {
+    lastDynamicApplyAt = performance.now();
+    window.setTimeout(() => {
+      applyingRules = false;
+      if (dynamicRootQueue.size > 0) {
+        scheduleRuleApplication();
+      }
+    }, 0);
+  }
 }
 
 function startRuleObserver(): void {
@@ -576,7 +744,9 @@ function startRuleObserver(): void {
   }
 
   observer = new MutationObserver((mutations) => {
-    if (mutations.some((mutation) => mutation.addedNodes.length > 0)) {
+    const addedRoots = collectAddedElementRoots(mutations);
+    if (addedRoots.length > 0) {
+      queueDynamicRoots(addedRoots);
       scheduleRuleApplication();
     }
   });
@@ -587,13 +757,50 @@ function startRuleObserver(): void {
   });
 }
 
+function collectAddedElementRoots(mutations: MutationRecord[]): HTMLElement[] {
+  const roots: HTMLElement[] = [];
+
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (node instanceof HTMLElement && isPageElement(node)) {
+        roots.push(node);
+      } else if (node instanceof DocumentFragment) {
+        roots.push(...[...node.querySelectorAll<HTMLElement>('*')].filter(isPageElement));
+      }
+    }
+  }
+
+  return roots;
+}
+
+function queueDynamicRoots(roots: HTMLElement[]): void {
+  for (const root of roots) {
+    if (dynamicRootQueue.size >= DYNAMIC_REAPPLY_MAX_QUEUED_ROOTS) {
+      console.info('[UI Remix] Dynamic rule queue limit reached; deferring extra added nodes.');
+      break;
+    }
+
+    if ([...dynamicRootQueue].some((queuedRoot) => queuedRoot.contains(root))) {
+      continue;
+    }
+
+    for (const queuedRoot of [...dynamicRootQueue]) {
+      if (root.contains(queuedRoot)) {
+        dynamicRootQueue.delete(queuedRoot);
+      }
+    }
+
+    dynamicRootQueue.add(root);
+  }
+}
+
 function getPageElementFromEvent(event: MouseEvent): HTMLElement | null {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
     return null;
   }
 
-  if (target.closest('[data-ui-remix-root="true"]')) {
+  if (!isPageElement(target)) {
     return null;
   }
 
@@ -602,4 +809,16 @@ function getPageElementFromEvent(event: MouseEvent): HTMLElement | null {
 
 function upsertRule(rules: UIRule[], rule: UIRule): UIRule[] {
   return [...rules.filter((existing) => existing.id !== rule.id), rule];
+}
+
+function getEnabledRules(): UIRule[] {
+  return cachedRules.filter(isRuleEnabled);
+}
+
+function isRuleEnabled(rule: UIRule): boolean {
+  return rule.enabled !== false;
+}
+
+function isPageElement(element: HTMLElement): boolean {
+  return !element.closest('[data-ui-remix-root="true"]');
 }

@@ -9,6 +9,7 @@ export interface BaseRule {
   type: RuleType;
   selector: string;
   createdAt: string;
+  enabled: boolean;
   source?: RuleSource;
 }
 

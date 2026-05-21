@@ -17,6 +17,7 @@ export function createHideRule(domain: string, selector: string): HideRule {
     pathPattern: DEFAULT_PATH_PATTERN,
     type: 'hide',
     selector,
+    enabled: true,
     createdAt: new Date().toISOString()
   };
 }
@@ -29,6 +30,7 @@ export function createTextRule(domain: string, selector: string, value: string):
     type: 'text',
     selector,
     value,
+    enabled: true,
     createdAt: new Date().toISOString()
   };
 }
@@ -45,6 +47,7 @@ export function createStyleRule(
     type: 'style',
     selector,
     styles,
+    enabled: true,
     createdAt: new Date().toISOString()
   };
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { getDomainFromUrl } from '../shared/domain';
-import { clearRulesForDomain, deleteRule, getRulesForDomain } from '../shared/storage';
+import { clearRulesForDomain, deleteRule, getRulesForDomain, setRuleEnabled } from '../shared/storage';
 import type { CommandRulePreview, UIRule } from '../shared/types';
 import { getActiveTab, sendMessageToActiveTab } from './chromeTabs';
 
@@ -270,6 +270,31 @@ export function App() {
     }
   }
 
+  async function handleToggleRule(rule: UIRule): Promise<void> {
+    const nextEnabled = rule.enabled === false;
+    setBusy(true);
+    try {
+      await setRuleEnabled(rule.id, nextEnabled);
+      setRules((existing) =>
+        existing.map((existingRule) =>
+          existingRule.id === rule.id ? { ...existingRule, enabled: nextEnabled } : existingRule
+        )
+      );
+      await tryReloadContentRules();
+      setStatus({
+        tone: 'success',
+        text: nextEnabled ? 'Rule enabled' : 'Rule disabled'
+      });
+    } catch (error) {
+      setStatus({
+        tone: 'error',
+        text: humanizeError(error)
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function tryReloadContentRules(): Promise<void> {
     try {
       await sendMessageToActiveTab({ type: 'UI_REMIX_RELOAD_RULES' });
@@ -408,19 +433,31 @@ export function App() {
           {rules.length > 0 ? (
             <ul className="rule-list">
               {rules.map((rule) => (
-                <li key={rule.id} className="rule-card">
+                <li key={rule.id} className={rule.enabled === false ? 'rule-card disabled' : 'rule-card'}>
                   <div className="rule-topline">
                     <strong>{rule.type}</strong>
-                    <time dateTime={rule.createdAt}>{formatDate(rule.createdAt)}</time>
+                    <div className="rule-meta">
+                      <span>{rule.enabled === false ? 'Disabled' : 'Enabled'}</span>
+                      <time dateTime={rule.createdAt}>{formatDate(rule.createdAt)}</time>
+                    </div>
                   </div>
                   <code title={rule.selector}>{rule.selector}</code>
-                  <button
-                    className="delete-button"
-                    disabled={busy}
-                    onClick={() => void handleDeleteRule(rule.id)}
-                  >
-                    Delete
-                  </button>
+                  <div className="rule-actions">
+                    <button
+                      className="toggle-rule-button"
+                      disabled={busy}
+                      onClick={() => void handleToggleRule(rule)}
+                    >
+                      {rule.enabled === false ? 'Enable' : 'Disable'}
+                    </button>
+                    <button
+                      className="delete-button"
+                      disabled={busy}
+                      onClick={() => void handleDeleteRule(rule.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
