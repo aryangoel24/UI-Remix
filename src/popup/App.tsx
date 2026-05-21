@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { getDomainFromUrl } from '../shared/domain';
-import { clearRulesForDomain, deleteRule, getRulesForDomain, setRuleEnabled } from '../shared/storage';
-import type { CommandRulePreview, UIRule } from '../shared/types';
+import {
+  clearRulesForDomain,
+  deleteRule,
+  getAISettings,
+  getRulesForDomain,
+  saveAISettings,
+  setRuleEnabled
+} from '../shared/storage';
+import type { AISettings, CommandRulePreview, UIRule } from '../shared/types';
 import { getActiveTab, sendMessageToActiveTab } from './chromeTabs';
 
 type StatusTone = 'idle' | 'success' | 'warning' | 'error';
@@ -17,6 +24,11 @@ const DEFAULT_STATUS: StatusMessage = {
   text: 'Ready'
 };
 
+const DEFAULT_AI_SETTINGS: AISettings = {
+  enabled: true,
+  accessToken: ''
+};
+
 export function App() {
   const [domain, setDomain] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -24,6 +36,8 @@ export function App() {
   const [rules, setRules] = useState<UIRule[]>([]);
   const [command, setCommand] = useState('');
   const [commandPreview, setCommandPreview] = useState<CommandRulePreview | null>(null);
+  const [aiSettings, setAISettings] = useState<AISettings>(DEFAULT_AI_SETTINGS);
+  const [accessTokenDraft, setAccessTokenDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(DEFAULT_STATUS);
 
@@ -43,6 +57,9 @@ export function App() {
     try {
       const tab = await getActiveTab();
       const nextDomain = tab?.url ? getDomainFromUrl(tab.url) : null;
+      const nextAISettings = await getAISettings();
+      setAISettings(nextAISettings);
+      setAccessTokenDraft(nextAISettings.accessToken);
       setDomain(nextDomain);
 
       if (!nextDomain) {
@@ -295,6 +312,55 @@ export function App() {
     }
   }
 
+  async function handleAIEnabledChange(enabled: boolean): Promise<void> {
+    const nextSettings = {
+      ...aiSettings,
+      enabled
+    };
+
+    setAISettings(nextSettings);
+    setCommandPreview(null);
+
+    try {
+      await saveAISettings(nextSettings);
+      setStatus({
+        tone: 'success',
+        text: enabled ? 'AI commands enabled' : 'AI commands disabled'
+      });
+    } catch (error) {
+      setAISettings(aiSettings);
+      setStatus({
+        tone: 'error',
+        text: humanizeError(error)
+      });
+    }
+  }
+
+  async function handleSaveAccessToken(): Promise<void> {
+    const nextSettings = {
+      ...aiSettings,
+      accessToken: accessTokenDraft.trim()
+    };
+
+    setBusy(true);
+    try {
+      await saveAISettings(nextSettings);
+      setAISettings(nextSettings);
+      setAccessTokenDraft(nextSettings.accessToken);
+      setStatus({
+        tone: 'success',
+        text: nextSettings.accessToken ? 'AI access token saved' : 'AI access token cleared'
+      });
+    } catch (error) {
+      setStatus({
+        tone: 'error',
+        text: humanizeError(error)
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function tryReloadContentRules(): Promise<void> {
     try {
       await sendMessageToActiveTab({ type: 'UI_REMIX_RELOAD_RULES' });
@@ -313,7 +379,12 @@ export function App() {
 
   const controlsDisabled = busy || !domain;
   const commandDisabled = busy || !domain;
-  const commandSourceLabel = commandPreview ? commandPreview.provider.toUpperCase() : 'AI + LOCAL';
+  const commandSourceLabel = commandPreview
+    ? commandPreview.provider.toUpperCase()
+    : aiSettings.enabled
+      ? 'AI + LOCAL'
+      : 'LOCAL';
+  const tokenChanged = accessTokenDraft.trim() !== aiSettings.accessToken;
 
   return (
     <main className="popup-shell">
@@ -346,6 +417,44 @@ export function App() {
         <button className="full danger" disabled={controlsDisabled} onClick={() => void handleClearRules()}>
           Clear Rules for This Site
         </button>
+      </section>
+
+      <section className="ai-settings-panel">
+        <div className="section-heading">
+          <h2>AI Access</h2>
+          <span>{aiSettings.enabled ? 'Enabled' : 'Off'}</span>
+        </div>
+
+        <label className="toggle-row">
+          <span>
+            <strong>Use AI parser</strong>
+            <small>{aiSettings.enabled ? 'Commands can use the hosted proxy.' : 'Commands use local parsing only.'}</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={aiSettings.enabled}
+            disabled={busy}
+            onChange={(event) => void handleAIEnabledChange(event.target.checked)}
+          />
+        </label>
+
+        <div className="token-row">
+          <input
+            type="password"
+            value={accessTokenDraft}
+            disabled={busy}
+            onChange={(event) => setAccessTokenDraft(event.target.value)}
+            placeholder="Access token"
+            aria-label="AI access token"
+          />
+          <button
+            className="secondary"
+            disabled={busy || !tokenChanged}
+            onClick={() => void handleSaveAccessToken()}
+          >
+            Save
+          </button>
+        </div>
       </section>
 
       <section className="command-panel">

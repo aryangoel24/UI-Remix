@@ -83,15 +83,7 @@ You can override the endpoint at build time:
 VITE_AI_ENDPOINT=https://your-api.example.com/api/interpret-command npm run build
 ```
 
-If you enable the optional proxy token on the backend, build the extension with the matching client token:
-
-```bash
-VITE_AI_ENDPOINT=https://your-api.example.com/api/interpret-command \
-VITE_UI_REMIX_PROXY_TOKEN=your-beta-token \
-npm run build
-```
-
-The token is only a private-beta gate because anything bundled into a browser extension can be extracted. Do not treat it as real user authentication.
+If your hosted proxy has invite gating enabled, users enter their access token in the extension popup. The token is stored in `chrome.storage.local` and sent as `x-ui-remix-access-token` on AI requests.
 
 The AI request includes the user command plus a capped list of visible page candidates: tag, text snippet, role, aria-label, selector, and bounding box. The AI server returns structured JSON with an intent, candidate IDs, styles/text/preset values, confidence, and reason. The extension converts that result into the same preview/apply flow used by local rules.
 
@@ -109,7 +101,9 @@ OPENAI_MODEL=gpt-5.4-nano
 PORT=8787
 HOST=0.0.0.0
 ALLOWED_ORIGINS=chrome-extension://your-extension-id
-UI_REMIX_PROXY_TOKEN=
+INVITE_TOKENS=beta-token-one,beta-token-two
+INVITE_TOKEN_HASHES=
+LOG_REQUESTS=true
 OPENAI_TIMEOUT_MS=15000
 MAX_REQUEST_BYTES=180000
 MAX_CANDIDATES=120
@@ -122,6 +116,16 @@ RATE_LIMIT_MAX_REQUESTS=30
 
 `ALLOWED_ORIGINS` is a comma-separated exact allowlist. For local development, leaving it empty allows `chrome-extension://*` origins and local Vite origins. For production, set it to your actual extension origin after Chrome gives the extension an ID.
 
+Set `INVITE_TOKENS` for a quick private beta, or set `INVITE_TOKEN_HASHES` to comma-separated SHA-256 hashes if you do not want raw invite tokens stored in your host environment. If neither is set, the proxy does not require an access token.
+
+Create a token hash with:
+
+```bash
+node -e "const { createHash } = require('crypto'); console.log(createHash('sha256').update(process.argv[1]).digest('hex'))" "your-beta-token"
+```
+
+When `LOG_REQUESTS=true`, the proxy logs status, latency, domain, command length, candidate count, intent, target count, and hashed IP/access-token identifiers. It does not log full commands or page text snippets.
+
 The proxy exposes:
 
 - `GET /health` for deployment health checks.
@@ -133,9 +137,11 @@ Production deployment flow:
 2. Set `HOST=0.0.0.0`.
 3. Set `OPENAI_API_KEY` in the host's secret/environment settings.
 4. Set `ALLOWED_ORIGINS=chrome-extension://your-extension-id`.
-5. Start the service with `npm run ai:server`.
-6. Build the extension with `VITE_AI_ENDPOINT=https://your-deployed-host/api/interpret-command npm run build`.
-7. Reload the unpacked `dist/` extension in Chrome.
+5. Optionally set `INVITE_TOKENS` or `INVITE_TOKEN_HASHES` for private beta access.
+6. Start the service with `npm run ai:server`.
+7. Build the extension with `VITE_AI_ENDPOINT=https://your-deployed-host/api/interpret-command npm run build`.
+8. Reload the unpacked `dist/` extension in Chrome.
+9. If invite gating is enabled, enter the access token in the popup's AI Access section.
 
 ## Architecture
 
@@ -153,8 +159,13 @@ Production deployment flow:
 - `src/shared/commandParser.ts` maps natural language variants to structured `ParsedCommand` objects with confidence scores.
 - `src/content/commandResolver.ts` resolves local parsed commands against the current page and creates previewable `UIRule` objects.
 - `server/ai-server.ts` is the OpenAI-backed backend/proxy. It handles CORS allowlisting, optional beta-token checks, request size caps, rate limiting, OpenAI timeouts, and structured response validation.
+- `public/privacy-policy.html` is a static privacy policy artifact that can be hosted for Chrome Web Store review.
 
 The rule engine is intentionally data-driven. `InjectRule` is present in the type system so future AI-generated or advanced rules can be added without reshaping the storage model. The command parser is isolated so a future LLM can replace the mock parser and produce the same command intent shape, or emit selector-backed `UIRule` objects directly.
+
+## Permissions
+
+UI Remix requests `activeTab`, `storage`, and `scripting`. It keeps `<all_urls>` host access because the core feature is applying saved rules automatically on arbitrary websites after page load. The unused `tabs` permission has been removed.
 
 ## Mock Commands
 

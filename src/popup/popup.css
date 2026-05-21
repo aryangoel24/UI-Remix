@@ -190,6 +190,58 @@ code {
   padding-top: 12px;
 }
 
+.ai-settings-panel {
+  display: grid;
+  gap: 9px;
+  border: 1px solid rgba(25, 25, 25, 0.12);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.toggle-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toggle-row strong {
+  color: #191919;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.toggle-row small {
+  color: #767065;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 34px;
+  min-width: 34px;
+  height: 20px;
+  min-height: 20px;
+  border-radius: 999px;
+  padding: 0;
+  accent-color: #0f766e;
+  cursor: pointer;
+}
+
+.token-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 8px;
+}
+
 .command-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 86px;

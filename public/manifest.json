@@ -18,6 +18,6 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": ["activeTab", "storage", "tabs", "scripting"],
+  "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": ["<all_urls>"]
 }

@@ -1,6 +1,11 @@
-import type { UIRule } from './types';
+import type { AISettings, UIRule } from './types';
 
 const RULES_STORAGE_KEY = 'uiRemix.rules.v1';
+const AI_SETTINGS_STORAGE_KEY = 'uiRemix.aiSettings.v1';
+const DEFAULT_AI_SETTINGS: AISettings = {
+  enabled: true,
+  accessToken: ''
+};
 
 type ChromeStorageArea = typeof chrome.storage.local;
 
@@ -109,4 +114,25 @@ export async function clearRulesForDomain(domain: string): Promise<void> {
     RULES_STORAGE_KEY,
     rules.filter((rule) => rule.domain !== domain)
   );
+}
+
+export async function getAISettings(): Promise<AISettings> {
+  const stored = await readStorage<Partial<AISettings>>(AI_SETTINGS_STORAGE_KEY);
+  return normalizeAISettings(stored);
+}
+
+export async function saveAISettings(settings: AISettings): Promise<void> {
+  await writeStorage(AI_SETTINGS_STORAGE_KEY, normalizeAISettings(settings));
+}
+
+function normalizeAISettings(value: unknown): AISettings {
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_AI_SETTINGS;
+  }
+
+  const candidate = value as Partial<AISettings>;
+  return {
+    enabled: candidate.enabled !== false,
+    accessToken: typeof candidate.accessToken === 'string' ? candidate.accessToken.trim() : ''
+  };
 }

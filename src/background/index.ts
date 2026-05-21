@@ -1,8 +1,8 @@
 import type { BackgroundAIMessage, BackgroundAIResponse } from '../shared/aiTypes';
+import { getAISettings } from '../shared/storage';
 
 const AI_ENDPOINT =
   import.meta.env.VITE_AI_ENDPOINT ?? 'http://127.0.0.1:8787/api/interpret-command';
-const PROXY_TOKEN = import.meta.env.VITE_UI_REMIX_PROXY_TOKEN;
 const AI_REQUEST_TIMEOUT_MS = 12000;
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -27,6 +27,14 @@ chrome.runtime.onMessage.addListener((message: BackgroundAIMessage, _sender, sen
 });
 
 async function interpretCommand(message: BackgroundAIMessage): Promise<BackgroundAIResponse> {
+  const settings = await getAISettings();
+  if (!settings.enabled) {
+    return {
+      ok: false,
+      error: 'AI is disabled.'
+    };
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
 
@@ -35,7 +43,7 @@ async function interpretCommand(message: BackgroundAIMessage): Promise<Backgroun
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(PROXY_TOKEN ? { 'x-ui-remix-proxy-key': PROXY_TOKEN } : {})
+        ...(settings.accessToken ? { 'x-ui-remix-access-token': settings.accessToken } : {})
       },
       body: JSON.stringify(message.request),
       signal: controller.signal

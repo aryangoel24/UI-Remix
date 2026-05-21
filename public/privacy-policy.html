@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI Remix Privacy Policy</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f7f5ef;
+        color: #191919;
+        font-family: "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+        line-height: 1.55;
+      }
+
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 48px 20px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 34px;
+        line-height: 1.05;
+      }
+
+      h2 {
+        margin: 30px 0 8px;
+        font-size: 18px;
+      }
+
+      p,
+      li {
+        color: #3f3b35;
+      }
+
+      code {
+        border: 1px solid rgba(25, 25, 25, 0.14);
+        border-radius: 5px;
+        padding: 1px 5px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>UI Remix Privacy Policy</h1>
+      <p>Last updated: May 21, 2026</p>
+
+      <h2>What UI Remix Does</h2>
+      <p>
+        UI Remix lets you create local rules that change the appearance of websites you visit. Rules are stored in
+        Chrome storage on your device.
+      </p>
+
+      <h2>Data Stored Locally</h2>
+      <p>
+        UI Remix stores saved UI rules, rule enabled/disabled state, AI enabled/disabled state, and an optional AI
+        access token in <code>chrome.storage.local</code>.
+      </p>
+
+      <h2>Data Sent To The AI Proxy</h2>
+      <p>
+        When AI parsing is enabled and you preview a command, UI Remix sends your command, the current page URL/domain,
+        page title, and a capped list of visible page element metadata to the configured UI Remix backend proxy.
+        Candidate metadata can include element tag names, selectors, text snippets, roles, labels, classes, IDs, and
+        approximate bounding boxes.
+      </p>
+
+      <h2>Data Not Collected</h2>
+      <ul>
+        <li>UI Remix does not collect passwords, cookies, payment details, or browsing history.</li>
+        <li>UI Remix does not send full page HTML to the AI proxy.</li>
+        <li>UI Remix does not sell user data.</li>
+      </ul>
+
+      <h2>Backend Logs</h2>
+      <p>
+        The backend proxy logs operational metadata such as status code, latency, domain, command length, candidate
+        count, intent, target count, and hashed IP or access-token identifiers. It does not log full commands or page
+        text snippets.
+      </p>
+
+      <h2>AI Provider</h2>
+      <p>
+        The backend proxy sends minimized command context to OpenAI to produce structured rule suggestions. The OpenAI
+        API key is stored only on the backend and is never included in the Chrome extension.
+      </p>
+
+      <h2>Your Controls</h2>
+      <p>
+        You can disable AI parsing in the extension popup. When AI is disabled, commands use local parsing only and do
+        not call the backend proxy.
+      </p>
+
+      <h2>Contact</h2>
+      <p>For questions about this policy, contact the UI Remix project owner.</p>
+    </main>
+  </body>
+</html>

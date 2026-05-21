@@ -81,6 +81,11 @@ export interface CommandRulePreview {
   lowConfidenceReason?: string;
 }
 
+export interface AISettings {
+  enabled: boolean;
+  accessToken: string;
+}
+
 export type ContentMessage =
   | { type: 'UI_REMIX_ENABLE_EDIT_MODE' }
   | { type: 'UI_REMIX_DISABLE_EDIT_MODE' }

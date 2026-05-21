@@ -1,5 +1,6 @@
 import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type {
   AICommandInterpretRequest,
   AICommandInterpretResult,
@@ -20,7 +21,11 @@ const MAX_CANDIDATES = Number(process.env.MAX_CANDIDATES ?? 120);
 const MAX_COMMAND_LENGTH = Number(process.env.MAX_COMMAND_LENGTH ?? 500);
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60_000);
 const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS ?? 30);
-const UI_REMIX_PROXY_TOKEN = process.env.UI_REMIX_PROXY_TOKEN;
+const INVITE_TOKEN_HASHES = new Set([
+  ...parseList(process.env.INVITE_TOKEN_HASHES ?? ''),
+  ...parseList(process.env.INVITE_TOKENS ?? '').map(hashToken)
+]);
+const LOG_REQUESTS = process.env.LOG_REQUESTS !== 'false';
 const ALLOWED_ORIGINS = parseAllowedOrigins(
   process.env.ALLOWED_ORIGINS ?? process.env.EXTENSION_ORIGIN ?? ''
 );
@@ -33,7 +38,9 @@ interface RateLimitBucket {
 const rateLimitBuckets = new Map<string, RateLimitBucket>();
 
 const server = http.createServer(async (request, response) => {
+  const startedAt = Date.now();
   if (!setCorsHeaders(request, response)) {
+    logRequest(request, 403, startedAt);
     writeJson(response, 403, { ok: false, error: 'Origin is not allowed.' });
     return;
   }
@@ -45,27 +52,34 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === 'GET' && request.url === '/health') {
+    logRequest(request, 200, startedAt);
     writeJson(response, 200, {
       ok: true,
       model: OPENAI_MODEL,
-      hasOpenAIKey: Boolean(OPENAI_API_KEY)
+      hasOpenAIKey: Boolean(OPENAI_API_KEY),
+      inviteGateEnabled: INVITE_TOKEN_HASHES.size > 0
     });
     return;
   }
 
   if (request.method !== 'POST' || request.url !== '/api/interpret-command') {
+    logRequest(request, 404, startedAt);
     writeJson(response, 404, { ok: false, error: 'Not found' });
     return;
   }
 
-  if (!isProxyTokenValid(request)) {
-    writeJson(response, 401, { ok: false, error: 'Proxy token is invalid.' });
+  const accessToken = getAccessToken(request);
+  const accessTokenHash = accessToken ? hashToken(accessToken) : null;
+  if (!isInviteTokenAllowed(accessTokenHash)) {
+    logRequest(request, 401, startedAt, { access: accessTokenHash ? 'invalid-token' : 'missing-token' });
+    writeJson(response, 401, { ok: false, error: 'A valid UI Remix access token is required.' });
     return;
   }
 
-  const rateLimit = checkRateLimit(getClientIp(request));
+  const rateLimit = checkRateLimit(getRateLimitKey(request, accessTokenHash));
   if (!rateLimit.allowed) {
     response.setHeader('retry-after', String(Math.ceil(rateLimit.retryAfterMs / 1000)));
+    logRequest(request, 429, startedAt, { access: tokenLogId(accessTokenHash) });
     writeJson(response, 429, {
       ok: false,
       error: 'Rate limit exceeded. Try again shortly.'
@@ -74,6 +88,7 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (!OPENAI_API_KEY) {
+    logRequest(request, 500, startedAt, { access: tokenLogId(accessTokenHash) });
     writeJson(response, 500, {
       ok: false,
       error: 'OPENAI_API_KEY is not set.'
@@ -85,8 +100,20 @@ const server = http.createServer(async (request, response) => {
     const body = await readJson<AICommandInterpretRequest>(request);
     validateRequest(body);
     const result = await interpretWithOpenAI(body);
+    logRequest(request, 200, startedAt, {
+      access: tokenLogId(accessTokenHash),
+      domain: body.domain,
+      commandLength: body.command.length,
+      candidates: body.candidates.length,
+      intent: result.parsed.intent,
+      targets: result.targetCandidateIds.length
+    });
     writeJson(response, 200, { ok: true, result } satisfies BackgroundAIResponse);
   } catch (error) {
+    logRequest(request, 400, startedAt, {
+      access: tokenLogId(accessTokenHash),
+      error: error instanceof Error ? error.message : String(error)
+    });
     writeJson(response, 400, {
       ok: false,
       error: error instanceof Error ? error.message : String(error)
@@ -322,7 +349,7 @@ function setCorsHeaders(request: IncomingMessage, response: ServerResponse): boo
   const origin = request.headers.origin;
   response.setHeader('vary', 'origin');
   response.setHeader('access-control-allow-methods', 'POST, OPTIONS');
-  response.setHeader('access-control-allow-headers', 'content-type, x-ui-remix-proxy-key');
+  response.setHeader('access-control-allow-headers', 'content-type, x-ui-remix-access-token');
 
   if (!origin) {
     return true;
@@ -370,10 +397,7 @@ function validateCandidate(candidate: PageCandidate): void {
 }
 
 function parseAllowedOrigins(value: string): string[] {
-  return value
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+  return parseList(value);
 }
 
 function isOriginAllowed(origin: string): boolean {
@@ -388,12 +412,32 @@ function isOriginAllowed(origin: string): boolean {
   );
 }
 
-function isProxyTokenValid(request: IncomingMessage): boolean {
-  if (!UI_REMIX_PROXY_TOKEN) {
+function getAccessToken(request: IncomingMessage): string | null {
+  const value = request.headers['x-ui-remix-access-token'];
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function isInviteTokenAllowed(accessTokenHash: string | null): boolean {
+  if (INVITE_TOKEN_HASHES.size === 0) {
     return true;
   }
 
-  return request.headers['x-ui-remix-proxy-key'] === UI_REMIX_PROXY_TOKEN;
+  if (!accessTokenHash) {
+    return false;
+  }
+
+  for (const expectedHash of INVITE_TOKEN_HASHES) {
+    if (safeEqual(accessTokenHash, expectedHash)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function getClientIp(request: IncomingMessage): string {
@@ -403,6 +447,10 @@ function getClientIp(request: IncomingMessage): string {
   }
 
   return request.socket.remoteAddress ?? 'unknown';
+}
+
+function getRateLimitKey(request: IncomingMessage, accessTokenHash: string | null): string {
+  return accessTokenHash ? `token:${accessTokenHash}` : `ip:${getClientIp(request)}`;
 }
 
 function checkRateLimit(clientIp: string): { allowed: true } | { allowed: false; retryAfterMs: number } {
@@ -426,6 +474,51 @@ function checkRateLimit(clientIp: string): { allowed: true } | { allowed: false;
 
   existing.count += 1;
   return { allowed: true };
+}
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function tokenLogId(accessTokenHash: string | null): string {
+  return accessTokenHash ? `token:${accessTokenHash.slice(0, 10)}` : 'none';
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function parseList(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function logRequest(
+  request: IncomingMessage,
+  status: number,
+  startedAt: number,
+  details: Record<string, string | number | undefined> = {}
+): void {
+  if (!LOG_REQUESTS || request.method === 'OPTIONS') {
+    return;
+  }
+
+  const elapsedMs = Date.now() - startedAt;
+  const payload = {
+    event: 'ui-remix-proxy-request',
+    method: request.method,
+    path: request.url,
+    status,
+    elapsedMs,
+    ipHash: hashToken(getClientIp(request)).slice(0, 12),
+    ...details
+  };
+
+  console.info(JSON.stringify(payload));
 }
 
 function clampConfidence(value: number): number {
