@@ -9,6 +9,7 @@ import type {
   PageCandidate
 } from '../src/shared/aiTypes';
 import type { ParsedCommand, UIStyleDeclaration } from '../src/shared/types';
+import { createUsageStore } from './usage-store';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
@@ -29,13 +30,7 @@ const LOG_REQUESTS = process.env.LOG_REQUESTS !== 'false';
 const ALLOWED_ORIGINS = parseAllowedOrigins(
   process.env.ALLOWED_ORIGINS ?? process.env.EXTENSION_ORIGIN ?? ''
 );
-
-interface RateLimitBucket {
-  count: number;
-  resetAt: number;
-}
-
-const rateLimitBuckets = new Map<string, RateLimitBucket>();
+const usageStore = createUsageStore();
 
 const server = http.createServer(async (request, response) => {
   const startedAt = Date.now();
@@ -57,7 +52,8 @@ const server = http.createServer(async (request, response) => {
       ok: true,
       model: OPENAI_MODEL,
       hasOpenAIKey: Boolean(OPENAI_API_KEY),
-      inviteGateEnabled: INVITE_TOKEN_HASHES.size > 0
+      inviteGateEnabled: INVITE_TOKEN_HASHES.size > 0,
+      usageStore: usageStore.name
     });
     return;
   }
@@ -72,14 +68,27 @@ const server = http.createServer(async (request, response) => {
   const accessTokenHash = accessToken ? hashToken(accessToken) : null;
   if (!isInviteTokenAllowed(accessTokenHash)) {
     logRequest(request, 401, startedAt, { access: accessTokenHash ? 'invalid-token' : 'missing-token' });
+    await recordUsage({
+      actorKey: getActorKey(request, accessTokenHash),
+      status: 401
+    });
     writeJson(response, 401, { ok: false, error: 'A valid UI Remix access token is required.' });
     return;
   }
 
-  const rateLimit = checkRateLimit(getRateLimitKey(request, accessTokenHash));
+  const actorKey = getActorKey(request, accessTokenHash);
+  const rateLimit = await usageStore.checkRateLimit(
+    actorKey,
+    RATE_LIMIT_MAX_REQUESTS,
+    RATE_LIMIT_WINDOW_MS
+  );
   if (!rateLimit.allowed) {
     response.setHeader('retry-after', String(Math.ceil(rateLimit.retryAfterMs / 1000)));
     logRequest(request, 429, startedAt, { access: tokenLogId(accessTokenHash) });
+    await recordUsage({
+      actorKey,
+      status: 429
+    });
     writeJson(response, 429, {
       ok: false,
       error: 'Rate limit exceeded. Try again shortly.'
@@ -89,6 +98,10 @@ const server = http.createServer(async (request, response) => {
 
   if (!OPENAI_API_KEY) {
     logRequest(request, 500, startedAt, { access: tokenLogId(accessTokenHash) });
+    await recordUsage({
+      actorKey,
+      status: 500
+    });
     writeJson(response, 500, {
       ok: false,
       error: 'OPENAI_API_KEY is not set.'
@@ -108,11 +121,22 @@ const server = http.createServer(async (request, response) => {
       intent: result.parsed.intent,
       targets: result.targetCandidateIds.length
     });
+    await recordUsage({
+      actorKey,
+      status: 200,
+      intent: result.parsed.intent,
+      candidates: body.candidates.length,
+      targets: result.targetCandidateIds.length
+    });
     writeJson(response, 200, { ok: true, result } satisfies BackgroundAIResponse);
   } catch (error) {
     logRequest(request, 400, startedAt, {
       access: tokenLogId(accessTokenHash),
       error: error instanceof Error ? error.message : String(error)
+    });
+    await recordUsage({
+      actorKey,
+      status: 400
     });
     writeJson(response, 400, {
       ok: false,
@@ -122,7 +146,7 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.info(`[UI Remix AI] listening on http://${HOST}:${PORT}`);
+  console.info(`[UI Remix AI] listening on http://${HOST}:${PORT} with ${usageStore.name} usage store`);
 });
 
 async function interpretWithOpenAI(
@@ -449,31 +473,22 @@ function getClientIp(request: IncomingMessage): string {
   return request.socket.remoteAddress ?? 'unknown';
 }
 
-function getRateLimitKey(request: IncomingMessage, accessTokenHash: string | null): string {
-  return accessTokenHash ? `token:${accessTokenHash}` : `ip:${getClientIp(request)}`;
+function getActorKey(request: IncomingMessage, accessTokenHash: string | null): string {
+  return accessTokenHash ? `token:${accessTokenHash}` : `ip:${hashToken(getClientIp(request))}`;
 }
 
-function checkRateLimit(clientIp: string): { allowed: true } | { allowed: false; retryAfterMs: number } {
-  const now = Date.now();
-  const existing = rateLimitBuckets.get(clientIp);
-
-  if (!existing || existing.resetAt <= now) {
-    rateLimitBuckets.set(clientIp, {
-      count: 1,
-      resetAt: now + RATE_LIMIT_WINDOW_MS
-    });
-    return { allowed: true };
+async function recordUsage(event: {
+  actorKey: string;
+  status: number;
+  intent?: string;
+  candidates?: number;
+  targets?: number;
+}): Promise<void> {
+  try {
+    await usageStore.recordUsage(event);
+  } catch (error) {
+    console.warn('[UI Remix AI] Could not record usage', error);
   }
-
-  if (existing.count >= RATE_LIMIT_MAX_REQUESTS) {
-    return {
-      allowed: false,
-      retryAfterMs: existing.resetAt - now
-    };
-  }
-
-  existing.count += 1;
-  return { allowed: true };
 }
 
 function hashToken(token: string): string {

@@ -104,6 +104,10 @@ ALLOWED_ORIGINS=chrome-extension://your-extension-id
 INVITE_TOKENS=beta-token-one,beta-token-two
 INVITE_TOKEN_HASHES=
 LOG_REQUESTS=true
+REDIS_URL=
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+USAGE_STORE_KEY_PREFIX=ui-remix
 OPENAI_TIMEOUT_MS=15000
 MAX_REQUEST_BYTES=180000
 MAX_CANDIDATES=120
@@ -126,6 +130,23 @@ node -e "const { createHash } = require('crypto'); console.log(createHash('sha25
 
 When `LOG_REQUESTS=true`, the proxy logs status, latency, domain, command length, candidate count, intent, target count, and hashed IP/access-token identifiers. It does not log full commands or page text snippets.
 
+For persistent rate limits and usage counters, configure one of:
+
+```bash
+# Render Key Value or any Redis-compatible service
+REDIS_URL=redis://...
+```
+
+or:
+
+```bash
+# Upstash Redis REST
+UPSTASH_REDIS_REST_URL=https://...
+UPSTASH_REDIS_REST_TOKEN=...
+```
+
+If neither Redis option is configured, the proxy falls back to in-memory counters for local development. Saved website UI rules still remain local in Chrome storage; Redis is used only for backend rate limits and daily usage counters.
+
 The proxy exposes:
 
 - `GET /health` for deployment health checks.
@@ -138,10 +159,11 @@ Production deployment flow:
 3. Set `OPENAI_API_KEY` in the host's secret/environment settings.
 4. Set `ALLOWED_ORIGINS=chrome-extension://your-extension-id`.
 5. Optionally set `INVITE_TOKENS` or `INVITE_TOKEN_HASHES` for private beta access.
-6. Start the service with `npm run ai:server`.
-7. Build the extension with `VITE_AI_ENDPOINT=https://your-deployed-host/api/interpret-command npm run build`.
-8. Reload the unpacked `dist/` extension in Chrome.
-9. If invite gating is enabled, enter the access token in the popup's AI Access section.
+6. Add Render Key Value and set its `REDIS_URL`, or set Upstash REST credentials.
+7. Start the service with `npm run ai:server`.
+8. Build the extension with `VITE_AI_ENDPOINT=https://your-deployed-host/api/interpret-command npm run build`.
+9. Reload the unpacked `dist/` extension in Chrome.
+10. If invite gating is enabled, enter the access token in the popup's AI Access section.
 
 ## Architecture
 
@@ -159,6 +181,7 @@ Production deployment flow:
 - `src/shared/commandParser.ts` maps natural language variants to structured `ParsedCommand` objects with confidence scores.
 - `src/content/commandResolver.ts` resolves local parsed commands against the current page and creates previewable `UIRule` objects.
 - `server/ai-server.ts` is the OpenAI-backed backend/proxy. It handles CORS allowlisting, optional beta-token checks, request size caps, rate limiting, OpenAI timeouts, and structured response validation.
+- `server/usage-store.ts` persists backend rate limits and daily usage counters in Redis/Upstash when configured, with an in-memory fallback for local development.
 - `public/privacy-policy.html` is a static privacy policy artifact that can be hosted for Chrome Web Store review.
 
 The rule engine is intentionally data-driven. `InjectRule` is present in the type system so future AI-generated or advanced rules can be added without reshaping the storage model. The command parser is isolated so a future LLM can replace the mock parser and produce the same command intent shape, or emit selector-backed `UIRule` objects directly.
